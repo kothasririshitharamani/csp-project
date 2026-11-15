@@ -2,7 +2,15 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
-export type SupportedLanguage = "te" | "en" | "hi";
+export type SupportedLanguage =
+  | "en"
+  | "te"
+  | "ta"
+  | "ml"
+  | "hi"
+  | "kn"
+  | "bn"
+  | "mr";
 
 export interface StoredFarmProfile {
   farmerName: string;

@@ -1,6 +1,89 @@
-export type Language = "te" | "en" | "hi";
+export type Language = "en" | "te" | "ta" | "ml" | "hi" | "kn" | "bn" | "mr";
 
-export type AuthView = "login" | "register" | "forgot";
+export const SUPPORTED_LANGUAGES: readonly Language[] = [
+  "en",
+  "te",
+  "ta",
+  "ml",
+  "hi",
+  "kn",
+  "bn",
+  "mr",
+] as const;
+
+export interface LanguageMeta {
+  code: Language;
+  bcp47: string;
+  nativeName: string;
+  englishName: string;
+  defaultTtsRate: number;
+}
+
+export const LANGUAGE_META: Record<Language, LanguageMeta> = {
+  en: {
+    code: "en",
+    bcp47: "en-IN",
+    nativeName: "English",
+    englishName: "English",
+    defaultTtsRate: 0.95,
+  },
+  te: {
+    code: "te",
+    bcp47: "te-IN",
+    nativeName: "తెలుగు",
+    englishName: "Telugu",
+    defaultTtsRate: 0.9,
+  },
+  ta: {
+    code: "ta",
+    bcp47: "ta-IN",
+    nativeName: "தமிழ்",
+    englishName: "Tamil",
+    defaultTtsRate: 0.92,
+  },
+  ml: {
+    code: "ml",
+    bcp47: "ml-IN",
+    nativeName: "മലയാളം",
+    englishName: "Malayalam",
+    defaultTtsRate: 0.92,
+  },
+  hi: {
+    code: "hi",
+    bcp47: "hi-IN",
+    nativeName: "हिन्दी",
+    englishName: "Hindi",
+    defaultTtsRate: 0.93,
+  },
+  kn: {
+    code: "kn",
+    bcp47: "kn-IN",
+    nativeName: "ಕನ್ನಡ",
+    englishName: "Kannada",
+    defaultTtsRate: 0.92,
+  },
+  bn: {
+    code: "bn",
+    bcp47: "bn-IN",
+    nativeName: "বাংলা",
+    englishName: "Bengali",
+    defaultTtsRate: 0.92,
+  },
+  mr: {
+    code: "mr",
+    bcp47: "mr-IN",
+    nativeName: "मराठी",
+    englishName: "Marathi",
+    defaultTtsRate: 0.93,
+  },
+};
+
+export function isSupportedLanguage(val: unknown): val is Language {
+  return (
+    typeof val === "string" &&
+    (SUPPORTED_LANGUAGES as readonly string[]).includes(val)
+  );
+}
 
 export type PageId =
   | "home"
@@ -12,6 +95,10 @@ export type PageId =
   | "faq"
   | "profile_setup";
 
+export type AuthView = "login" | "register" | "forgot";
+
+export type AreaUnit = "acres" | "hectares";
+
 export type CropOption =
   | "paddy"
   | "maize"
@@ -22,18 +109,6 @@ export type CropOption =
   | "pulses"
   | "other";
 
-export type AreaUnit = "acres" | "hectares";
-export type SeasonOption = "kharif" | "rabi" | "summer";
-export type SoilTypeOption = "sandy" | "clay" | "loamy" | "black" | "red" | "unknown";
-export type WaterSourceOption =
-  | "borewell"
-  | "open_well"
-  | "canal"
-  | "rainwater"
-  | "tank"
-  | "other";
-export type IrrigationMethodOption = "drip" | "sprinkler" | "flood" | "unknown";
-export type WaterAvailabilityOption = "sufficient" | "limited" | "very_limited";
 export type GrowthStageOption =
   | "initial"
   | "vegetative"
@@ -41,7 +116,37 @@ export type GrowthStageOption =
   | "maturity"
   | "unknown";
 
+export type SeasonOption = "kharif" | "rabi" | "summer";
+
+export type SoilTypeOption =
+  | "red"
+  | "black"
+  | "sandy"
+  | "clay"
+  | "loamy"
+  | "unknown";
+
+export type WaterSourceOption =
+  | "borewell"
+  | "open_well"
+  | "canal"
+  | "rainwater"
+  | "tank"
+  | "other";
+
+export type IrrigationMethodOption =
+  | "drip"
+  | "sprinkler"
+  | "flood"
+  | "unknown";
+
+export type WaterAvailabilityOption =
+  | "sufficient"
+  | "limited"
+  | "very_limited";
+
 export type WaterUnit = "litres" | "kilolitres" | "cubic_metres";
+
 export type DisasterType = "cyclone" | "flood" | "drought";
 
 export interface FarmProfile {
@@ -71,7 +176,7 @@ export interface AuthUser {
   preferredLanguage: Language;
   profileComplete: boolean;
   profile: FarmProfile | null;
-  authMode: "firebase" | "demo_server";
+  authMode: "demo_server";
 }
 
 export interface IrrigationInput {
@@ -105,7 +210,6 @@ export interface WaterBudgetInput {
   availableWater: number;
   waterUnit: WaterUnit;
   crop: CropOption;
-  customCrop?: string;
   landArea: number;
   areaUnit: AreaUnit;
   irrigationMethod: IrrigationMethodOption;
@@ -130,15 +234,6 @@ export interface WaterBudgetResult {
   assumptions: string[];
 }
 
-export interface RecentActivityItem {
-  id: string;
-  type: "irrigation" | "budget";
-  createdAt: string;
-  summaryTitle: string;
-  summaryDetail: string;
-  payload: IrrigationInput | WaterBudgetInput;
-}
-
 export interface SoilAnalysisResult {
   visibleCharacteristics: string;
   moistureCondition: string;
@@ -147,4 +242,13 @@ export interface SoilAnalysisResult {
   waterManagementPractices: string[];
   practicalNextSteps: string[];
   preliminaryDisclaimer: string;
+}
+
+export interface RecentActivityItem {
+  id: string;
+  type: "irrigation" | "budget";
+  createdAt: string;
+  summaryTitle: string;
+  summaryDetail: string;
+  payload: IrrigationInput | WaterBudgetInput;
 }

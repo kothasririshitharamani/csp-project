@@ -1,13 +1,36 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Language } from "../types/app";
+import { Language, LANGUAGE_META } from "../types/app";
 
 export type SpeechState =
   | "ready"
-  | "recording"
+  | "listening"
   | "processing"
+  | "recognized"
   | "permission_denied"
   | "unsupported"
+  | "language_unsupported"
+  | "no_speech"
+  | "network_error"
   | "error";
+
+interface SpeechRecognitionAlternative {
+  transcript: string;
+  confidence?: number;
+}
+
+interface SpeechRecognitionResultItem {
+  isFinal: boolean;
+  length: number;
+  [altIndex: number]: SpeechRecognitionAlternative;
+}
+
+interface SpeechRecognitionResultEvent {
+  resultIndex?: number;
+  results: {
+    length: number;
+    [index: number]: SpeechRecognitionResultItem;
+  };
+}
 
 interface SpeechRecognitionInstance {
   lang: string;
@@ -16,21 +39,11 @@ interface SpeechRecognitionInstance {
   continuous: boolean;
   onstart: (() => void) | null;
   onresult: ((event: SpeechRecognitionResultEvent) => void) | null;
-  onerror: ((event: { error: string }) => void) | null;
+  onerror: ((event: { error: string; message?: string }) => void) | null;
   onend: (() => void) | null;
   start: () => void;
   stop: () => void;
   abort: () => void;
-}
-
-interface SpeechRecognitionResultEvent {
-  results: {
-    length: number;
-    [index: number]: {
-      isFinal: boolean;
-      [altIndex: number]: { transcript: string };
-    };
-  };
 }
 
 function getSpeechRecognitionConstructor():
@@ -44,10 +57,21 @@ function getSpeechRecognitionConstructor():
   return win.SpeechRecognition || win.webkitSpeechRecognition || null;
 }
 
-function getRecognitionLocale(language: Language): string {
-  if (language === "te") return "te-IN";
-  if (language === "hi") return "hi-IN";
-  return "en-IN";
+function pickBestAlternative(item: SpeechRecognitionResultItem): string {
+  if (!item || item.length === 0) return "";
+  let bestText = item[0]?.transcript || "";
+  let bestConf = typeof item[0]?.confidence === "number" ? item[0].confidence : -1;
+
+  for (let a = 1; a < item.length; a++) {
+    const alt = item[a];
+    if (!alt || typeof alt.transcript !== "string") continue;
+    const conf = typeof alt.confidence === "number" ? alt.confidence : -1;
+    if (conf > bestConf && alt.transcript.trim()) {
+      bestConf = conf;
+      bestText = alt.transcript;
+    }
+  }
+  return bestText.trim();
 }
 
 export function useSpeechRecognition(language: Language) {
@@ -55,21 +79,51 @@ export function useSpeechRecognition(language: Language) {
   const [speechState, setSpeechState] = useState<SpeechState>(
     supported ? "ready" : "unsupported"
   );
-  const [transcript, setTranscript] = useState("");
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+  const [finalTranscript, setFinalTranscript] = useState("");
+  const [interimTranscript, setInterimTranscript] = useState("");
+  const [errorCode, setErrorCode] = useState<string | null>(null);
 
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+  const sessionIdRef = useRef(0);
+  const manualStopRef = useRef(false);
+  const finalBufferRef = useRef("");
+  const interimBufferRef = useRef("");
+
+  const abortActiveRecognition = useCallback(() => {
+    sessionIdRef.current += 1;
+    if (recognitionRef.current) {
+      const rec = recognitionRef.current;
+      recognitionRef.current = null;
+      rec.onstart = null;
+      rec.onresult = null;
+      rec.onerror = null;
+      rec.onend = null;
+      try {
+        rec.abort();
+      } catch {
+        // Ignore abort errors
+      }
+    }
+  }, []);
+
+  // Abort & cleanly reset active listening if user switches language
+  useEffect(() => {
+    abortActiveRecognition();
+    manualStopRef.current = false;
+    finalBufferRef.current = "";
+    interimBufferRef.current = "";
+    setFinalTranscript("");
+    setInterimTranscript("");
+    setErrorCode(null);
+    setSpeechState(supported ? "ready" : "unsupported");
+  }, [language, supported, abortActiveRecognition]);
+
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.abort();
-        } catch {
-          // Ignore cleanup abort errors
-        }
-      }
+      abortActiveRecognition();
     };
-  }, []);
+  }, [abortActiveRecognition]);
 
   const startListening = useCallback(async () => {
     const RecognitionCtor = getSpeechRecognitionConstructor();
@@ -78,153 +132,215 @@ export function useSpeechRecognition(language: Language) {
       return;
     }
 
-    setErrorMessage(null);
+    abortActiveRecognition();
+    const mySessionId = ++sessionIdRef.current;
+    manualStopRef.current = false;
+    finalBufferRef.current = "";
+    interimBufferRef.current = "";
+    setFinalTranscript("");
+    setInterimTranscript("");
+    setErrorCode(null);
 
-    // Cleanly abort any active session before starting a new one
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.abort();
-      } catch {
-        // Ignore
-      }
-      recognitionRef.current = null;
-    }
-
-    // Explicitly request microphone permission when MediaDevices API is available
+    // Explicitly request microphone access (and enable noise suppression where supported)
     if (
       typeof navigator !== "undefined" &&
       navigator.mediaDevices &&
       typeof navigator.mediaDevices.getUserMedia === "function"
     ) {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        let stream: MediaStream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+            },
+          });
+        } catch (constraintErr) {
+          const name = constraintErr instanceof Error ? constraintErr.name : "";
+          if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+            throw constraintErr;
+          }
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        }
         for (const track of stream.getTracks()) {
           track.stop();
         }
       } catch (err) {
+        if (sessionIdRef.current !== mySessionId) return;
         const name = err instanceof Error ? err.name : "";
         if (name === "NotAllowedError" || name === "PermissionDeniedError") {
           setSpeechState("permission_denied");
-          return;
+          setErrorCode("permission_denied");
+        } else {
+          setSpeechState("error");
+          setErrorCode("mic_unavailable");
         }
-        setSpeechState("error");
-        setErrorMessage(
-          language === "te"
-            ? "మైక్రోఫోన్ అందుబాటులో లేదు. దయచేసి టైప్ చేసి అడగండి."
-            : language === "hi"
-              ? "माइक्रोफ़ोन उपलब्ध नहीं है। कृपया टाइप करके पूछें।"
-              : "Microphone is unavailable. Please type your question."
-        );
         return;
       }
     }
 
+    if (sessionIdRef.current !== mySessionId) return;
+
     try {
       const recognition = new RecognitionCtor();
-      recognition.lang = getRecognitionLocale(language);
+      // Strictly apply exact regional Indian BCP-47 locale without falling back to English
+      recognition.lang = LANGUAGE_META[language].bcp47;
       recognition.interimResults = true;
-      recognition.maxAlternatives = 1;
-      recognition.continuous = false;
+      recognition.maxAlternatives = 3;
+      recognition.continuous = true;
 
       recognition.onstart = () => {
-        setSpeechState("recording");
+        if (sessionIdRef.current !== mySessionId) return;
+        setSpeechState("listening");
       };
 
       recognition.onresult = (event: SpeechRecognitionResultEvent) => {
-        let combined = "";
-        let hasFinal = false;
+        if (sessionIdRef.current !== mySessionId) return;
+
+        const finals: string[] = [];
+        const interims: string[] = [];
+
         for (let i = 0; i < event.results.length; i++) {
           const item = event.results[i];
-          if (item && item[0] && typeof item[0].transcript === "string") {
-            combined += item[0].transcript;
-          }
-          if (item?.isFinal) {
-            hasFinal = true;
+          if (!item) continue;
+          const piece = pickBestAlternative(item);
+          if (!piece) continue;
+          if (item.isFinal) {
+            finals.push(piece);
+          } else {
+            interims.push(piece);
           }
         }
-        // Speech text is plain string, never parsed as JSON
-        setTranscript(combined.trim());
-        if (hasFinal) {
-          setSpeechState("processing");
-        }
+
+        const nextFinal = finals.join(" ").replace(/\s+/g, " ").trim();
+        const nextInterim = interims.join(" ").replace(/\s+/g, " ").trim();
+
+        finalBufferRef.current = nextFinal;
+        interimBufferRef.current = nextInterim;
+        setFinalTranscript(nextFinal);
+        setInterimTranscript(nextInterim);
       };
 
       recognition.onerror = (event: { error: string }) => {
-        if (
-          event.error === "not-allowed" ||
-          event.error === "service-not-allowed"
-        ) {
+        if (sessionIdRef.current !== mySessionId) return;
+
+        const errType = event.error;
+        if (errType === "aborted") {
+          return;
+        }
+
+        recognitionRef.current = null;
+
+        if (errType === "not-allowed" || errType === "service-not-allowed") {
           setSpeechState("permission_denied");
-        } else if (event.error === "no-speech") {
-          setSpeechState("error");
-          setErrorMessage(
-            language === "te"
-              ? "మాట వినిపించలేదు. మళ్లీ ప్రయత్నించండి లేదా టైప్ చేయండి."
-              : language === "hi"
-                ? "कोई आवाज़ सुनाई नहीं दी। फिर से बोलें या टाइप करें।"
-                : "No speech detected. Please try again or type your question."
-          );
+          setErrorCode("permission_denied");
+        } else if (errType === "language-not-supported") {
+          setSpeechState("language_unsupported");
+          setErrorCode("language_unsupported");
+        } else if (errType === "no-speech") {
+          setSpeechState("no_speech");
+          setErrorCode("no_speech");
+        } else if (errType === "network") {
+          setSpeechState("network_error");
+          setErrorCode("network_error");
         } else {
           setSpeechState("error");
-          setErrorMessage(
-            language === "te"
-              ? "వాయిస్ గుర్తింపులో లోపం జరిగింది. దయచేసి టైప్ చేయండి."
-              : language === "hi"
-                ? "आवाज़ पहचानने में त्रुटि हुई। कृपया टाइप करें।"
-                : "Voice recognition error. Please try again or type your text."
-          );
+          setErrorCode(errType || "generic");
         }
       };
 
       recognition.onend = () => {
-        setSpeechState((prev) =>
-          prev === "permission_denied" ||
-          prev === "unsupported" ||
-          prev === "error"
-            ? prev
-            : "ready"
-        );
+        if (sessionIdRef.current !== mySessionId) return;
+        recognitionRef.current = null;
+
+        // Commit any lingering interim words upon clean stop
+        const combined = [finalBufferRef.current, interimBufferRef.current]
+          .filter(Boolean)
+          .join(" ")
+          .replace(/\s+/g, " ")
+          .trim();
+
+        if (combined) {
+          finalBufferRef.current = combined;
+          interimBufferRef.current = "";
+          setFinalTranscript(combined);
+          setInterimTranscript("");
+        }
+
+        setSpeechState((prev) => {
+          if (
+            prev === "permission_denied" ||
+            prev === "unsupported" ||
+            prev === "language_unsupported" ||
+            prev === "no_speech" ||
+            prev === "network_error" ||
+            prev === "error"
+          ) {
+            return prev;
+          }
+          if (combined) {
+            return "recognized";
+          }
+          return manualStopRef.current ? "ready" : "no_speech";
+        });
       };
 
       recognitionRef.current = recognition;
       recognition.start();
     } catch {
+      if (sessionIdRef.current !== mySessionId) return;
       setSpeechState("error");
-      setErrorMessage(
-        language === "te"
-          ? "మైక్రోఫోన్ ప్రారంభించలేకపోయాము. టైప్ చేసి ఉపయోగించండి."
-          : language === "hi"
-            ? "माइक्रोफ़ोन शुरू नहीं हो सका। कृपया टाइप करके उपयोग करें।"
-            : "Unable to start microphone. Please use typed input."
-      );
+      setErrorCode("start_failed");
     }
-  }, [language]);
+  }, [language, abortActiveRecognition]);
 
   const stopListening = useCallback(() => {
+    manualStopRef.current = true;
     if (recognitionRef.current) {
       setSpeechState("processing");
       try {
         recognitionRef.current.stop();
       } catch {
-        setSpeechState("ready");
+        setSpeechState(finalBufferRef.current || interimBufferRef.current ? "recognized" : "ready");
       }
+    } else {
+      setSpeechState(finalBufferRef.current ? "recognized" : "ready");
     }
   }, []);
 
-  const resetTranscript = useCallback(() => {
-    setTranscript("");
-    setErrorMessage(null);
-    if (supported) setSpeechState("ready");
-  }, [supported]);
+  const resetRecognition = useCallback(() => {
+    abortActiveRecognition();
+    manualStopRef.current = false;
+    finalBufferRef.current = "";
+    interimBufferRef.current = "";
+    setFinalTranscript("");
+    setInterimTranscript("");
+    setErrorCode(null);
+    setSpeechState(supported ? "ready" : "unsupported");
+  }, [supported, abortActiveRecognition]);
+
+  const retryListening = useCallback(() => {
+    startListening();
+  }, [startListening]);
+
+  const transcript = [finalTranscript, interimTranscript]
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
 
   return {
     supported,
     speechState,
     transcript,
-    setTranscript,
-    errorMessage,
+    finalTranscript,
+    interimTranscript,
+    errorCode,
     startListening,
     stopListening,
-    resetTranscript,
+    resetRecognition,
+    retryListening,
   };
 }

@@ -1,19 +1,26 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
+  Eraser,
   HelpCircle,
   Info,
   Loader2,
   RefreshCw,
   Send,
+  SlidersHorizontal,
   Trash2,
 } from "lucide-react";
 import { BackToHome } from "../components/BackToHome";
 import { ReadAloudButton } from "../components/ReadAloudButton";
-import { VoiceInputControl } from "../components/VoiceInputControl";
+import {
+  VoiceInputControl,
+  VoiceInputControlHandle,
+} from "../components/VoiceInputControl";
+import { VoiceSettingsPanel } from "../components/VoiceSettingsPanel";
 import { useLanguage } from "../hooks/useLanguage";
+import { SpeechState } from "../hooks/useSpeechRecognition";
 import { getTranslations } from "../i18n/translations";
-import { FarmProfile } from "../types/app";
+import { FarmProfile, Language } from "../types/app";
 import { safeJsonFetch } from "../utils/apiClient";
 
 interface ChatMessage {
@@ -28,6 +35,7 @@ interface FaqAssistantPageProps {
   initialQuestion?: string | null;
   onConsumeInitialQuestion?: () => void;
   onBackHome: () => void;
+  onLanguageChange?: (lang: Language) => void;
 }
 
 export function FaqAssistantPage({
@@ -35,17 +43,22 @@ export function FaqAssistantPage({
   initialQuestion,
   onConsumeInitialQuestion,
   onBackHome,
+  onLanguageChange,
 }: FaqAssistantPageProps) {
   const { language } = useLanguage();
   const t = getTranslations(language);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
+  const [speechState, setSpeechState] = useState<SpeechState>("ready");
   const [loading, setLoading] = useState(false);
+  const [showVoiceSettings, setShowVoiceSettings] = useState(false);
   const [geminiConfigured, setGeminiConfigured] = useState<boolean | null>(
     null
   );
+
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const voiceRef = useRef<VoiceInputControlHandle | null>(null);
 
   const cropDisplay = profile
     ? profile.crop === "other" && profile.customCrop
@@ -73,9 +86,17 @@ export function FaqAssistantPage({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
+  const handleVoiceTranscript = useCallback((text: string) => {
+    setInput(text);
+  }, []);
+
   const sendQuestion = async (questionText: string) => {
     const trimmed = questionText.trim();
     if (!trimmed || loading) return;
+
+    if (speechState === "listening") {
+      voiceRef.current?.stop();
+    }
 
     const userMsg: ChatMessage = {
       id: `u-${Date.now()}`,
@@ -84,12 +105,14 @@ export function FaqAssistantPage({
     };
 
     const historyForApi = messages
-      .filter((m): m is ChatMessage & { role: "user" | "assistant" } =>
-        m.role === "user" || m.role === "assistant"
+      .filter(
+        (m): m is ChatMessage & { role: "user" | "assistant" } =>
+          m.role === "user" || m.role === "assistant"
       )
       .map((m) => ({ role: m.role, text: m.text }));
 
     setMessages((prev) => [...prev, userMsg]);
+    voiceRef.current?.reset();
     setInput("");
     setLoading(true);
 
@@ -163,10 +186,27 @@ export function FaqAssistantPage({
     sendQuestion(input);
   };
 
+  const handleRemoveText = () => {
+    // Clears spoken/typed question and speech state while preserving previous chat messages & farmer profile
+    voiceRef.current?.reset();
+    setInput("");
+  };
+
   const handleRetry = (failedQuestion: string, errorId: string) => {
     setMessages((prev) => prev.filter((m) => m.id !== errorId));
     sendQuestion(failedQuestion);
   };
+
+  const hasRemovableText = Boolean(
+    input.length > 0 ||
+      speechState === "listening" ||
+      speechState === "processing" ||
+      speechState === "recognized" ||
+      speechState === "no_speech" ||
+      speechState === "network_error" ||
+      speechState === "error" ||
+      speechState === "permission_denied"
+  );
 
   return (
     <div className="space-y-6">
@@ -182,17 +222,37 @@ export function FaqAssistantPage({
           </p>
         </div>
 
-        {messages.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
           <button
             type="button"
-            onClick={() => setMessages([])}
-            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-white border border-[#D3E3D8] text-sm font-semibold text-[#71877D] hover:text-[#214B3D] min-h-[44px] self-start sm:self-auto"
+            onClick={() => setShowVoiceSettings((prev) => !prev)}
+            aria-expanded={showVoiceSettings}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl border text-sm font-semibold transition-colors min-h-[44px] ${
+              showVoiceSettings
+                ? "bg-[#214B3D] text-white border-[#214B3D]"
+                : "bg-white text-[#214B3D] border-[#D3E3D8] hover:bg-[#E3F0E8]"
+            }`}
           >
-            <Trash2 className="w-4 h-4" />
-            <span>{t.faq.clearBtn}</span>
+            <SlidersHorizontal className="w-4 h-4" />
+            <span>{t.voice.ttsSettingsBtn}</span>
           </button>
-        )}
+
+          {messages.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setMessages([])}
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-white border border-[#D3E3D8] text-sm font-semibold text-[#71877D] hover:text-[#214B3D] min-h-[44px]"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>{t.faq.clearBtn}</span>
+            </button>
+          )}
+        </div>
       </div>
+
+      {showVoiceSettings && (
+        <VoiceSettingsPanel onLanguageChange={onLanguageChange} />
+      )}
 
       {profile && (
         <div className="bg-[#E3F0E8] border border-[#D3E3D8] rounded-2xl p-3.5 flex items-center gap-2.5 text-xs sm:text-sm text-[#214B3D]">
@@ -314,8 +374,10 @@ export function FaqAssistantPage({
           className="border-t border-[#D3E3D8] bg-[#EDF5EF]/60 p-4 space-y-3"
         >
           <VoiceInputControl
+            ref={voiceRef}
             compact
-            onTranscriptChange={(text) => setInput(text)}
+            onTranscriptChange={handleVoiceTranscript}
+            onStateChange={setSpeechState}
           />
 
           <div className="flex flex-col sm:flex-row gap-2.5">
@@ -326,14 +388,25 @@ export function FaqAssistantPage({
               placeholder={t.faq.inputPlaceholder}
               className="flex-1 px-4 py-3 rounded-xl border border-[#D3E3D8] bg-white text-sm sm:text-base text-[#214B3D] min-h-[48px]"
             />
-            <button
-              type="submit"
-              disabled={!input.trim() || loading}
-              className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-[#39785C] text-white text-sm sm:text-base font-semibold hover:bg-[#2f634c] disabled:opacity-50 disabled:cursor-not-allowed min-h-[48px] shrink-0"
-            >
-              <Send className="w-4 h-4" />
-              <span>{t.faq.sendBtn}</span>
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                disabled={!hasRemovableText}
+                onClick={handleRemoveText}
+                className="inline-flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl border border-[#D3E3D8] bg-white text-sm font-semibold text-[#214B3D] hover:bg-[#E3F0E8] disabled:opacity-45 disabled:cursor-not-allowed min-h-[48px]"
+              >
+                <Eraser className="w-4 h-4 text-[#71877D]" />
+                <span>{t.faq.removeTextBtn}</span>
+              </button>
+              <button
+                type="submit"
+                disabled={!input.trim() || loading}
+                className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-[#39785C] text-white text-sm sm:text-base font-semibold hover:bg-[#2f634c] disabled:opacity-50 disabled:cursor-not-allowed min-h-[48px]"
+              >
+                <Send className="w-4 h-4" />
+                <span>{t.faq.sendBtn}</span>
+              </button>
+            </div>
           </div>
         </form>
       </div>

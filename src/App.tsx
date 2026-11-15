@@ -5,6 +5,7 @@ import { Header } from "./components/Header";
 import { RecentActivityModal } from "./components/RecentActivityModal";
 import { useRecentActivity } from "./hooks/useFarmProfile";
 import { LanguageProvider, useLanguage } from "./hooks/useLanguage";
+import { TextToSpeechProvider, useTextToSpeech } from "./hooks/useTextToSpeech";
 import { AuthPage } from "./pages/AuthPage";
 import { DisasterPage } from "./pages/DisasterPage";
 import { FaqAssistantPage } from "./pages/FaqAssistantPage";
@@ -48,6 +49,7 @@ function getPageFromHash(): PageId {
 
 function AppShell() {
   const { setLanguage } = useLanguage();
+  const { stop: stopTts } = useTextToSpeech();
 
   const [checkingSession, setCheckingSession] = useState(true);
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -182,6 +184,7 @@ function AppShell() {
   };
 
   const handleLogout = async () => {
+    stopTts();
     try {
       await safeJsonFetch("/api/auth/logout", { method: "POST" });
     } catch {
@@ -265,6 +268,7 @@ function AppShell() {
             onNavigate={navigate}
             activities={activities}
             onOpenHistory={() => setHistoryModalOpen(true)}
+            onLanguageChange={handleLanguageChange}
           />
         )}
 
@@ -311,6 +315,7 @@ function AppShell() {
           <FaqAssistantPage
             profile={user.profile}
             onBackHome={() => navigate("home")}
+            onLanguageChange={handleLanguageChange}
           />
         )}
       </main>
@@ -337,7 +342,9 @@ function AppShell() {
 export default function App() {
   return (
     <LanguageProvider>
-      <AppShell />
+      <TextToSpeechProvider>
+        <AppShell />
+      </TextToSpeechProvider>
     </LanguageProvider>
   );
 }

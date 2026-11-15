@@ -29,6 +29,10 @@ import {
   geocodeFarmerLocation,
   isWeatherConfigured,
 } from "./server/services/weatherService.ts";
+import {
+  getTtsCapabilities,
+  synthesizeSpeech,
+} from "./server/services/ttsService.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -43,8 +47,21 @@ function isFirebaseConfiguredOnServer(): boolean {
   return fs.existsSync(cfgPath);
 }
 
+const VALID_LANGUAGES = new Set<SupportedLanguage>([
+  "en",
+  "te",
+  "ta",
+  "ml",
+  "hi",
+  "kn",
+  "bn",
+  "mr",
+]);
+
 function normalizeLang(input: unknown): SupportedLanguage {
-  if (input === "en" || input === "hi" || input === "te") return input;
+  if (typeof input === "string" && VALID_LANGUAGES.has(input as SupportedLanguage)) {
+    return input as SupportedLanguage;
+  }
   return "te";
 }
 
@@ -189,14 +206,21 @@ async function startServer() {
 
   // Public health & auth routes
   app.get("/api/health", (_req, res) => {
+    const tts = getTtsCapabilities();
     res.json({
       ok: true,
       geminiConfigured: isGeminiConfigured(),
+      ttsConfigured: tts.configured,
+      ttsProvider: tts.provider,
       weatherConfigured: isWeatherConfigured(),
       weatherProvider: "open-meteo",
       firebaseConfigured: isFirebaseConfiguredOnServer(),
       authMode: isFirebaseConfiguredOnServer() ? "firebase" : "demo_server",
     });
+  });
+
+  app.get("/api/tts/status", (_req, res) => {
+    res.json({ ok: true, ...getTtsCapabilities() });
   });
 
   app.get("/api/auth/session", (req, res) => {
@@ -519,6 +543,44 @@ async function startServer() {
         errorCode: err.code || "FAQ_FAILED",
         message:
           err.message || "Unable to get an answer right now. Please try again.",
+      });
+    }
+  });
+
+  // Multilingual Neural TTS synthesis route (protected)
+  app.post("/api/tts/speak", requireDemoAuth, async (req, res) => {
+    try {
+      const { text, language, rate } = req.body ?? {};
+      if (typeof text !== "string" || !text.trim()) {
+        res.status(400).json({
+          ok: false,
+          errorCode: "INVALID_INPUT",
+          message: "Text is required for speech synthesis.",
+        });
+        return;
+      }
+
+      const lang = normalizeLang(language);
+      const result = await synthesizeSpeech({
+        text,
+        language: lang,
+        rate: typeof rate === "number" ? rate : undefined,
+      });
+
+      res.json({
+        ok: true,
+        ...result,
+      });
+    } catch (error) {
+      const err = error as Error & { code?: string; status?: number };
+      console.error("[/api/tts/speak] Error:", err.code || "", err.message);
+      const status = err.status || (err.code === "TTS_NOT_CONFIGURED" ? 503 : 502);
+      res.status(status).json({
+        ok: false,
+        errorCode: err.code || "TTS_FAILED",
+        message:
+          err.message ||
+          "Neural voice service is unavailable right now. Falling back to browser voice.",
       });
     }
   });

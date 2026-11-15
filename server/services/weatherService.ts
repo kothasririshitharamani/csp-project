@@ -1,3 +1,5 @@
+import { SupportedLanguage } from "./authService.ts";
+
 export type WeatherConditionKey =
   | "clear"
   | "partly_cloudy"
@@ -19,14 +21,14 @@ export interface GeocodeResultItem {
   displayLabel: string;
 }
 
+export type LocalizedStringMap = Record<SupportedLanguage, string>;
+
 export interface WeatherForecastItem {
   timeLabel: string;
   isoTime: string;
   tempC: number;
   conditionKey: WeatherConditionKey;
-  conditionEn: string;
-  conditionTe: string;
-  conditionHi: string;
+  conditionLabels: LocalizedStringMap;
   rainProbabilityPct: number | null;
   expectedRainfallMm: number;
   windSpeedKmh: number;
@@ -36,9 +38,7 @@ export interface WeatherForecastItem {
 export interface DailyForecastItem {
   date: string;
   conditionKey: WeatherConditionKey;
-  conditionEn: string;
-  conditionTe: string;
-  conditionHi: string;
+  conditionLabels: LocalizedStringMap;
   tempMinC: number;
   tempMaxC: number;
   rainProbabilityMaxPct: number | null;
@@ -55,12 +55,8 @@ export interface WeatherInterpretationItem {
     | "dry_warm"
     | "general";
   severity: "info" | "caution" | "warning";
-  titleEn: string;
-  titleTe: string;
-  titleHi: string;
-  detailEn: string;
-  detailTe: string;
-  detailHi: string;
+  titles: LocalizedStringMap;
+  details: LocalizedStringMap;
 }
 
 export interface CurrentWeatherPayload {
@@ -71,9 +67,7 @@ export interface CurrentWeatherPayload {
   rainMm: number;
   weatherCode: number;
   conditionKey: WeatherConditionKey;
-  conditionEn: string;
-  conditionTe: string;
-  conditionHi: string;
+  conditionLabels: LocalizedStringMap;
   windSpeedKmh: number;
   windDirectionDeg: number;
   windDirectionCardinal: string;
@@ -100,11 +94,7 @@ export interface WeatherResponsePayload {
   forecast: WeatherForecastItem[];
   dailyForecast: DailyForecastItem[];
   interpretations: WeatherInterpretationItem[];
-  assumptions: {
-    en: string[];
-    te: string[];
-    hi: string[];
-  };
+  assumptions: Record<SupportedLanguage, string[]>;
 }
 
 interface CacheEntry<T> {
@@ -115,8 +105,8 @@ interface CacheEntry<T> {
 const GEOCODE_CACHE = new Map<string, CacheEntry<GeocodeResultItem[]>>();
 const WEATHER_CACHE = new Map<string, CacheEntry<WeatherResponsePayload>>();
 
-const GEOCODE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
-const WEATHER_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const GEOCODE_TTL_MS = 6 * 60 * 60 * 1000;
+const WEATHER_TTL_MS = 10 * 60 * 1000;
 const MAX_CACHE_ENTRIES = 120;
 
 function setBoundedCache<T>(
@@ -146,100 +136,175 @@ function getValidCache<T>(
 }
 
 export function isWeatherConfigured(): boolean {
-  return true; // Open-Meteo public API requires no API key
+  return true;
 }
 
 export function describeWmoCode(code: number): {
   key: WeatherConditionKey;
-  en: string;
-  te: string;
-  hi: string;
+  labels: LocalizedStringMap;
 } {
   if (code === 0) {
     return {
       key: "clear",
-      en: "Clear sky",
-      te: "నిర్మలమైన ఆకాశం",
-      hi: "साफ आसमान",
+      labels: {
+        en: "Clear sky",
+        te: "నిర్మలమైన ఆకాశం",
+        hi: "साफ आसमान",
+        ta: "தெளிவான வானம்",
+        ml: "തെളിഞ്ഞ ആകാശം",
+        kn: "ಸ್ಪಷ್ಟ ಆಕಾಶ",
+        bn: "পরিষ্কার আকাশ",
+        mr: "स्वच्छ आकाश",
+      },
     };
   }
   if (code === 1) {
     return {
       key: "clear",
-      en: "Mainly clear",
-      te: "ఎక్కువగా ఎండ",
-      hi: "मुख्यतः साफ",
+      labels: {
+        en: "Mainly clear",
+        te: "ఎక్కువగా ఎండ",
+        hi: "मुख्यतः साफ",
+        ta: "பெரும்பாலும் தெளிவு",
+        ml: "പ്രധാനമായും തെളിഞ്ഞത്",
+        kn: "ಮುಖ್ಯವಾಗಿ ಸ್ಪಷ್ಟ",
+        bn: "প্রধানত পরিষ্কার",
+        mr: "मुख्यतः स्वच्छ",
+      },
     };
   }
   if (code === 2) {
     return {
       key: "partly_cloudy",
-      en: "Partly cloudy",
-      te: "పాక్షికంగా మేఘావృతం",
-      hi: "आंशिक रूप से बादल",
+      labels: {
+        en: "Partly cloudy",
+        te: "పాక్షికంగా మేఘావృతం",
+        hi: "आंशिक रूप से बादल",
+        ta: "பகுதி மேகமூட்டம்",
+        ml: "ഭാഗികമായി മേഘാവൃതം",
+        kn: "ಭಾಗಶಃ ಮೋಡ",
+        bn: "আংশিক মেঘলা",
+        mr: "अंशतः ढगाळ",
+      },
     };
   }
   if (code === 3) {
     return {
       key: "cloudy",
-      en: "Overcast",
-      te: "దట్టమైన మేఘాలు",
-      hi: "घने बादल",
+      labels: {
+        en: "Overcast",
+        te: "దట్టమైన మేఘాలు",
+        hi: "घने बादल",
+        ta: "மேகமூட்டம்",
+        ml: "മൂടിക്കെട്ടിയ ആകാശം",
+        kn: "ದಟ್ಟ ಮೋಡ",
+        bn: "ঘন মেঘলা",
+        mr: "दाट ढगाळ",
+      },
     };
   }
   if (code === 45 || code === 48) {
     return {
       key: "fog",
-      en: "Fog / Mist",
-      te: "పొగమంచు",
-      hi: "कोहरा / धुंध",
+      labels: {
+        en: "Fog / Mist",
+        te: "పొగమంచు",
+        hi: "कोहरा / धुंध",
+        ta: "மூடுபனி",
+        ml: "മൂടൽമഞ്ഞ്",
+        kn: "ಮಂಜು",
+        bn: "কুয়াশা",
+        mr: "धुके",
+      },
     };
   }
   if (code >= 51 && code <= 57) {
     return {
       key: "drizzle",
-      en: "Drizzle",
-      te: "చిరు జల్లులు",
-      hi: "हल्की बूंदाबांदी",
+      labels: {
+        en: "Drizzle",
+        te: "చిరు జల్లులు",
+        hi: "हल्की बूंदाबांदी",
+        ta: "தூறல் மழை",
+        ml: "ചാറ്റൽ മഴ",
+        kn: "ತುಂತುರು ಮಳೆ",
+        bn: "গুঁড়ি গুঁড়ি বৃষ্টি",
+        mr: "रिमझिम पाऊस",
+      },
     };
   }
   if (code === 61 || code === 80) {
     return {
       key: "rain",
-      en: "Light rain",
-      te: "తేలికపాటి వర్షం",
-      hi: "हल्की बारिश",
+      labels: {
+        en: "Light rain",
+        te: "తేలికపాటి వర్షం",
+        hi: "हल्की बारिश",
+        ta: "லேசான மழை",
+        ml: "ചെറിയ മഴ",
+        kn: "ಸಣ್ಣ ಮಳೆ",
+        bn: "হালকা বৃষ্টি",
+        mr: "हलका पाऊस",
+      },
     };
   }
   if (code === 63 || code === 81 || code === 66) {
     return {
       key: "rain",
-      en: "Moderate rain",
-      te: "మోస్తరు వర్షం",
-      hi: "मध्यम बारिश",
+      labels: {
+        en: "Moderate rain",
+        te: "మోస్తరు వర్షం",
+        hi: "मध्यम बारिश",
+        ta: "மிதமான மழை",
+        ml: "മിതമായ മഴ",
+        kn: "ಮಧ್ಯಮ ಮಳೆ",
+        bn: "মাঝারি বৃষ্টি",
+        mr: "मध्यम पाऊस",
+      },
     };
   }
   if (code === 65 || code === 67 || code === 82) {
     return {
       key: "heavy_rain",
-      en: "Heavy rain",
-      te: "భారీ వర్షం",
-      hi: "तेज बारिश",
+      labels: {
+        en: "Heavy rain",
+        te: "భారీ వర్షం",
+        hi: "तेज बारिश",
+        ta: "கனமழை",
+        ml: "ശക്തമായ മഴ",
+        kn: "ಭಾರೀ ಮಳೆ",
+        bn: "ভারী বৃষ্টি",
+        mr: "मुसळधार पाऊस",
+      },
     };
   }
   if (code >= 95 && code <= 99) {
     return {
       key: "thunderstorm",
-      en: "Thunderstorm",
-      te: "ఉరుములతో కూడిన వర్షం",
-      hi: "आंधी और गरज के साथ बारिश",
+      labels: {
+        en: "Thunderstorm",
+        te: "ఉరుములతో కూడిన వర్షం",
+        hi: "आंधी और गरज के साथ बारिश",
+        ta: "இடியுடன் கூடிய மழை",
+        ml: "ഇടിയോട് കൂടിയ മഴ",
+        kn: "ಗುಡುಗು ಸಹಿತ ಮಳೆ",
+        bn: "বজ্রসহ বৃষ্টি",
+        mr: "विजांच्या कडकडाटासह पाऊस",
+      },
     };
   }
   return {
     key: "partly_cloudy",
-    en: "Variable sky",
-    te: "మారుతున్న వాతావరణం",
-    hi: "बदलता मौसम",
+    labels: {
+      en: "Variable sky",
+      te: "మారుతున్న వాతావరణం",
+      hi: "बदलता मौसम",
+      ta: "மாறும் வானிலை",
+      ml: "മാറുന്ന കാലാവസ്ഥ",
+      kn: "ಬದಲಾಗುವ ಹವಾಮಾನ",
+      bn: "পরিবর্তনশীল আকাশ",
+      mr: "बदलणारे हवामान",
+    },
   };
 }
 
@@ -426,7 +491,6 @@ export async function geocodeFarmerLocation(params: {
       .map((s) => sanitizePlaceToken(s))
       .filter(Boolean);
 
-    // If user typed "Village, District" (e.g., "Amaravathi, Guntur"), use trailing segment as district hint
     const derivedHints = {
       state: hints.state,
       district:
@@ -446,7 +510,6 @@ export async function geocodeFarmerLocation(params: {
       }
       if (collected.length > 0) {
         const ranked = rankGeocodeCandidates(collected, derivedHints);
-        // Deduplicate by coordinate rounded to 3 decimals
         const seen = new Set<string>();
         const unique = ranked.filter((c) => {
           const key = `${c.latitude.toFixed(3)},${c.longitude.toFixed(3)}`;
@@ -473,7 +536,6 @@ export async function geocodeFarmerLocation(params: {
     return { results: [], resolvedFallback: false };
   }
 
-  // Try Village -> Mandal -> District in order, preferring matches inside farmer's state/district
   const orderedQueries = [params.village, params.mandal, params.district]
     .map((q) => sanitizePlaceToken(q))
     .filter(Boolean);
@@ -552,16 +614,38 @@ function buildAgriculturalInterpretations(params: {
     ...hourlyForecast.slice(0, 4).map((h) => h.windSpeedKmh)
   );
 
+  const probPct = Math.round(peakRainProb);
+  const rain24 = next24hRainMm.toFixed(1);
+  const heavyMm = Math.max(next24hRainMm, maxDailyRainMm).toFixed(1);
+  const peakT = peakTempC.toFixed(1);
+  const curT = current.tempC.toFixed(1);
+  const windKmh = peakWindKmh.toFixed(1);
+  const hum = current.humidityPct;
+
   if (peakRainProb >= 45 || next24hRainMm >= 3) {
     items.push({
       type: "rain_irrigation",
       severity: "info",
-      titleEn: "Rain is expected — review irrigation schedule",
-      titleTe: "వర్షం అవకాశం ఉంది — నీటిపారుదల ముందుగా సరిచూడండి",
-      titleHi: "बारिश की संभावना है — सिंचाई का समय जांचें",
-      detailEn: `Forecast rain probability reaches ${Math.round(peakRainProb)}% (approx. ${next24hRainMm.toFixed(1)} mm over 24 hours). Rain is not guaranteed; check the forecast and soil moisture before running pumps.`,
-      detailTe: `రాబోయే 24 గంటల్లో వర్షం అవకాశం ${Math.round(peakRainProb)}% వరకు (సుమారు ${next24hRainMm.toFixed(1)} మి.మీ.) ఉంది. వర్షం ఖచ్చితమని భావించకుండా నేల తేమ చూసి నీటిపారుదల నిర్ణయించండి.`,
-      detailHi: `अगले 24 घंटों में बारिश की संभावना ${Math.round(peakRainProb)}% तक (लगभग ${next24hRainMm.toFixed(1)} मिमी) है। बारिश निश्चित नहीं मानी जा सकती; पंप चलाने से पहले मिट्टी की नमी जांचें।`,
+      titles: {
+        en: "Rain is expected — review irrigation schedule",
+        te: "వర్షం అవకాశం ఉంది — నీటిపారుదల ముందుగా సరిచూడండి",
+        hi: "बारिश की संभावना है — सिंचाई का समय जांचें",
+        ta: "மழைக்கு வாய்ப்பு — பாசன நேரத்தை சரிபார்க்கவும்",
+        ml: "മഴയ്ക്ക് സാധ്യത — നനയ്ക്കൽ സമയം പരിശോധിക്കുക",
+        kn: "ಮಳೆ ನಿರೀಕ್ಷೆ — ನೀರಾವರಿ ವೇಳಾಪಟ್ಟಿ ಪರಿಶೀಲಿಸಿ",
+        bn: "বৃষ্টির সম্ভাবনা — সেচের সময়সূচি দেখে নিন",
+        mr: "पावसाची शक्यता — सिंचनाचे वेळापत्रक तपासा",
+      },
+      details: {
+        en: `Forecast rain probability reaches ${probPct}% (approx. ${rain24} mm over 24 hours). Rain is not guaranteed; check soil moisture before running pumps.`,
+        te: `రాబోయే 24 గంటల్లో వర్షం అవకాశం ${probPct}% వరకు (సుమారు ${rain24} మి.మీ.) ఉంది. నేల తేమ చూసి నీటిపారుదల నిర్ణయించండి.`,
+        hi: `अगले 24 घंटों में बारिश की संभावना ${probPct}% तक (लगभग ${rain24} मिमी) है। पंप चलाने से पहले मिट्टी की नमी जांचें।`,
+        ta: `அடுத்த 24 மணி நேரத்தில் மழை வாய்ப்பு ${probPct}% (சுமார் ${rain24} மி.மீ) உள்ளது. மண் ஈரப்பதம் பார்த்து நீர் பாய்ச்சவும்.`,
+        ml: `അടുത്ത 24 മണിക്കൂറിൽ മഴ സാധ്യത ${probPct}% (ഏകദേശം ${rain24} മി.മീ) ആണ്. മണ്ണിലെ ഈർപ്പം നോക്കി നനയ്ക്കുക.`,
+        kn: `ಮುಂದಿನ 24 ಗಂಟೆಗಳಲ್ಲಿ ಮಳೆ ಸಾಧ್ಯತೆ ${probPct}% (ಸುಮಾರು ${rain24} ಮಿ.ಮೀ) ಇದೆ. ಮಣ್ಣಿನ ತೇವಾಂಶ ನೋಡಿ ನೀರು ಹಾಯಿಸಿ.`,
+        bn: `আগামী ২৪ ঘণ্টায় বৃষ্টির সম্ভাবনা ${probPct}% (প্রায় ${rain24} মিমি)। পাম্প চালানোর আগে মাটির আর্দ্রতা দেখে নিন।`,
+        mr: `पुढील २४ तासांत पावसाची शक्यता ${probPct}% (सुमारे ${rain24} मिमी) आहे. पंप सुरू करण्यापूर्वी जमिनीतील ओलावा तपासा.`,
+      },
     });
   }
 
@@ -569,12 +653,26 @@ function buildAgriculturalInterpretations(params: {
     items.push({
       type: "drainage_warning",
       severity: "warning",
-      titleEn: "Heavy rainfall forecast requires field drainage check",
-      titleTe: "భారీ వర్ష సూచన — పొలం నీరు బయటకు పోయే మార్గాలు సిద్ధం చేయండి",
-      titleHi: "तेज बारिश का अनुमान — खेत की जल निकासी जांचें",
-      detailEn: `Model estimates indicate ${Math.max(next24hRainMm, maxDailyRainMm).toFixed(1)} mm rainfall potential. Clear field bund outlets and drainage trenches to avoid waterlogging near roots.`,
-      detailTe: `సుమారు ${Math.max(next24hRainMm, maxDailyRainMm).toFixed(1)} మి.మీ. వర్షపాత అవకాశం ఉంది. వేర్ల వద్ద నీరు నిలవకుండా గట్లు మరియు డ్రైనేజీ కాలువలను శుభ్రం చేయండి.`,
-      detailHi: `लगभग ${Math.max(next24hRainMm, maxDailyRainMm).toFixed(1)} मिमी बारिश का अनुमान है। जड़ों के पास जलभराव से बचने के लिए मेड़ और नालियाँ साफ रखें।`,
+      titles: {
+        en: "Heavy rainfall forecast requires field drainage check",
+        te: "భారీ వర్ష సూచన — పొలం నీరు బయటకు పోయే మార్గాలు సిద్ధం చేయండి",
+        hi: "तेज बारिश का अनुमान — खेत की जल निकासी जांचें",
+        ta: "கனமழை முன்னறிவிப்பு — வயல் வடிகால் அமைப்பைச் சரிபார்க்கவும்",
+        ml: "ശക്തമായ മഴ മുന്നറിയിപ്പ് — വയലിലെ നീർവാർച്ച പരിശോധിക്കുക",
+        kn: "ಭಾರೀ ಮಳೆ ಮುನ್ಸೂಚನೆ — ಹೊಲದ ನೀರು ಬಸಿದುಹೋಗುವ ದಾರಿ ಸ್ವಚ್ಛಗೊಳಿಸಿ",
+        bn: "ভারী বৃষ্টির পূর্বাভাস — জমির নিকাশি ব্যবস্থা পরিষ্কার রাখুন",
+        mr: "मुसळधार पावसाचा अंदाज — शेतातील निचरा व्यवस्था तपासा",
+      },
+      details: {
+        en: `Model estimates indicate ${heavyMm} mm rainfall potential. Clear bund outlets and drainage trenches to avoid waterlogging near roots.`,
+        te: `సుమారు ${heavyMm} మి.మీ. వర్షపాత అవకాశం ఉంది. వేర్ల వద్ద నీరు నిలవకుండా గట్లు మరియు డ్రైనేజీ కాలువలను శుభ్రం చేయండి.`,
+        hi: `लगभग ${heavyMm} मिमी बारिश का अनुमान है। जड़ों के पास जलभराव से बचने के लिए मेड़ और नालियाँ साफ रखें।`,
+        ta: `சுமார் ${heavyMm} மி.மீ மழை பெய்யக்கூடும். வேர்களில் நீர் தேங்காமல் இருக்க வரப்பு மற்றும் வடிகால்களைச் சுத்தம் செய்யவும்.`,
+        ml: `ഏകദേശം ${heavyMm} മി.മീ മഴയ്ക്ക് സാധ്യതയുണ്ട്. വേരുകളിൽ വെള്ളം കെട്ടിനിൽക്കാതിരിക്കാൻ നീർച്ചാലുകൾ വൃത്തിയാക്കുക.`,
+        kn: `ಸುಮಾರು ${heavyMm} ಮಿ.ಮೀ ಮಳೆ ಸಾಧ್ಯತೆ ಇದೆ. ಬೇರುಗಳ ಬಳಿ ನೀರು ನಿಲ್ಲದಂತೆ ಬದು ಮತ್ತು ಕಾಲುವೆಗಳನ್ನು ಸ್ವಚ್ಛಗೊಳಿಸಿ.`,
+        bn: `প্রায় ${heavyMm} মিমি বৃষ্টির সম্ভাবনা রয়েছে। শিকড়ের কাছে জল জমা এড়াতে আইল ও নিকাশি নালা পরিষ্কার রাখুন।`,
+        mr: `सुमारे ${heavyMm} मिमी पावसाचा अंदाज आहे. मुळांजवळ पाणी साचू नये म्हणून बांध व चर मोकळे ठेवा.`,
+      },
     });
   }
 
@@ -582,12 +680,26 @@ function buildAgriculturalInterpretations(params: {
     items.push({
       type: "heat_demand",
       severity: "caution",
-      titleEn: "High temperatures may increase crop water demand",
-      titleTe: "అధిక ఉష్ణోగ్రతల వల్ల పంటకు నీటి అవసరం పెరగవచ్చు",
-      titleHi: "उच्च तापमान से फसल की पानी की मांग बढ़ सकती है",
-      detailEn: `Temperatures may reach ${peakTempC.toFixed(1)}°C (current ${current.tempC.toFixed(1)}°C, feels like ${current.feelsLikeC.toFixed(1)}°C). Irrigate early morning or evening to lower evaporation loss.`,
-      detailTe: `ఉష్ణోగ్రత ${peakTempC.toFixed(1)}°C వరకు ఉండవచ్చు (ప్రస్తుతం ${current.tempC.toFixed(1)}°C). నీరు ఆవిరైపోకుండా ఉదయం లేదా సాయంత్రం నీరు పెట్టండి.`,
-      detailHi: `तापमान ${peakTempC.toFixed(1)}°C तक जा सकता है (अभी ${current.tempC.toFixed(1)}°C)। वाष्पीकरण कम करने के लिए सुबह जल्दी या शाम को सिंचाई करें।`,
+      titles: {
+        en: "High temperatures may increase crop water demand",
+        te: "అధిక ఉష్ణోగ్రతల వల్ల పంటకు నీటి అవసరం పెరగవచ్చు",
+        hi: "उच्च तापमान से फसल की पानी की मांग बढ़ सकती है",
+        ta: "அதிக வெப்பத்தால் பயிரின் நீர் தேவை அதிகரிக்கலாம்",
+        ml: "ഉയർന്ന ചൂട് കാരണം വിളകൾക്ക് കൂടുതൽ വെള്ളം ആവശ്യമായേക്കാം",
+        kn: "ಹೆಚ್ಚಿನ ತಾಪಮಾನದಿಂದ ಬೆಳೆಗಳಿಗೆ ನೀರಿನ ಬೇಡಿಕೆ ಹೆಚ್ಚಾಗಬಹುದು",
+        bn: "উচ্চ তাপমাত্রায় ফসলের জলের চাহিদা বাড়তে পারে",
+        mr: "वाढलेल्या तापमानामुळे पिकाची पाण्याची गरज वाढू शकते",
+      },
+      details: {
+        en: `Temperatures may reach ${peakT}°C (current ${curT}°C). Irrigate early morning or evening to lower evaporation loss.`,
+        te: `ఉష్ణోగ్రత ${peakT}°C వరకు ఉండవచ్చు (ప్రస్తుతం ${curT}°C). నీరు ఆవిరైపోకుండా ఉదయం లేదా సాయంత్రం నీరు పెట్టండి.`,
+        hi: `तापमान ${peakT}°C तक जा सकता है (अभी ${curT}°C)। वाष्पीकरण कम करने के लिए सुबह जल्दी या शाम को सिंचाई करें।`,
+        ta: `வெப்பநிலை ${peakT}°C வரை உயரலாம் (தற்போது ${curT}°C). ஆவியாதலைக் குறைக்க காலை அல்லது மாலையில் நீர் பாய்ச்சவும்.`,
+        ml: `താപനില ${peakT}°C വരെ ഉയരാം (ഇപ്പോൾ ${curT}°C). ബാഷ്പീകരണം കുറയ്ക്കാൻ രാവിലെയോ വൈകുന്നേരമോ നനയ്ക്കുക.`,
+        kn: `ತಾಪಮಾನ ${peakT}°C ವರೆಗೆ ತಲುಪಬಹುದು (ಪ್ರಸ್ತುತ ${curT}°C). ಆವಿಯಾಗುವಿಕೆ ತಗ್ಗಿಸಲು ಬೆಳಿಗ್ಗೆ ಅಥವಾ ಸಂಜೆ ನೀರು ಹಾಯಿಸಿ.`,
+        bn: `তাপমাত্রা ${peakT}°C পর্যন্ত উঠতে পারে (এখন ${curT}°C)। বাষ্পীভবন কমাতে ভোরে বা সন্ধ্যায় সেচ দিন।`,
+        mr: `तापमान ${peakT}°C पर्यंत जाऊ शकते (सध्या ${curT}°C). बाष्पीभवन कमी करण्यासाठी सकाळी लवकर किंवा संध्याकाळी सिंचन करा.`,
+      },
     });
   }
 
@@ -595,25 +707,53 @@ function buildAgriculturalInterpretations(params: {
     items.push({
       type: "wind_spraying",
       severity: "caution",
-      titleEn: "Strong winds may affect spraying activities",
-      titleTe: "బలమైన గాలులు మందుల పిచికారీ & స్ప్రింక్లర్లపై ప్రభావం చూపుతాయి",
-      titleHi: "तेज हवाएं छिड़काव कार्यों को प्रभावित कर सकती हैं",
-      detailEn: `Wind speeds may reach ${peakWindKmh.toFixed(1)} km/h (current ${current.windSpeedKmh.toFixed(1)} km/h ${current.windDirectionCardinal}). Postpone foliar spraying or overhead sprinklers during gusty periods.`,
-      detailTe: `గాలి వేగం గంటకు ${peakWindKmh.toFixed(1)} కి.మీ. వరకు ఉంది. గాలి తక్కువగా ఉన్న ఉదయ వేళల్లో మాత్రమే పిచికారీ చేయండి.`,
-      detailHi: `हवा की गति ${peakWindKmh.toFixed(1)} किमी/घंटा तक रह सकती है। तेज हवा के समय छिड़काव या स्प्रिंकलर सिंचाई टालें।`,
+      titles: {
+        en: "Strong winds may affect spraying activities",
+        te: "బలమైన గాలులు మందుల పిచికారీ & స్ప్రింక్లర్లపై ప్రభావం చూపుతాయి",
+        hi: "तेज हवाएं छिड़काव कार्यों को प्रभावित कर सकती हैं",
+        ta: "பலத்த காற்று தெளிப்புப் பணிகளைப் பாதிக்கலாம்",
+        ml: "ശക്തമായ കാറ്റ് മരുന്നുതളിക്കലിനെ ബാധിച്ചേക്കാം",
+        kn: "ಜೋರಾದ ಗಾಳಿ ಸಿಂಪಡಣೆ ಕೆಲಸದ ಮೇಲೆ ಪರಿಣಾಮ ಬೀರಬಹುದು",
+        bn: "দমকা হাওয়া স্প্রে করার কাজে প্রভাব ফেলতে পারে",
+        mr: "जोरदार वाऱ्यामुळे फवारणी कामात अडथळा येऊ शकतो",
+      },
+      details: {
+        en: `Wind speeds may reach ${windKmh} km/h. Postpone foliar spraying or overhead sprinklers during gusty periods.`,
+        te: `గాలి వేగం గంటకు ${windKmh} కి.మీ. వరకు ఉంది. గాలి తక్కువగా ఉన్న ఉదయ వేళల్లో మాత్రమే పిచికారీ చేయండి.`,
+        hi: `हवा की गति ${windKmh} किमी/घंटा तक रह सकती है। तेज हवा के समय छिड़काव या स्प्रिंकलर सिंचाई टालें।`,
+        ta: `காற்றின் வேகம் மணிக்கு ${windKmh} கி.மீ வரை இருக்கலாம். காற்று வீசும் நேரத்தில் மருந்து தெளிப்பதைத் தவிர்க்கவும்.`,
+        ml: `കാറ്റിന്റെ വേഗത മണിക്കൂറിൽ ${windKmh} കി.മീ വരെയാകാം. കാറ്റുള്ള സമയത്ത് തളിക്കൽ ഒഴിവാക്കുക.`,
+        kn: `ಗಾಳಿಯ ವೇಗ ಗಂಟೆಗೆ ${windKmh} ಕಿ.ಮೀ ತಲುಪಬಹುದು. ಗಾಳಿ ಹೆಚ್ಚಿರುವಾಗ ಸಿಂಪಡಣೆ ಮುಂದೂಡಿ.`,
+        bn: `বাতাসের গতি ঘণ্টায় ${windKmh} কিমি পর্যন্ত হতে পারে। দমকা হাওয়ার সময় স্প্রে বা স্প্রিংকলার বন্ধ রাখুন।`,
+        mr: `वाऱ्याचा वेग ताशी ${windKmh} किमी पर्यंत असू शकतो. वेगवान वाऱ्याच्या वेळी फवारणी किंवा तुषार सिंचन टाळा.`,
+      },
     });
   }
 
-  if (current.humidityPct < 38 && peakRainProb < 25) {
+  if (hum < 38 && peakRainProb < 25) {
     items.push({
       type: "dry_warm",
       severity: "info",
-      titleEn: "Low humidity — conserve root-zone soil moisture",
-      titleTe: "గాలిలో తేమ తక్కువ — వేర్ల వద్ద మల్చింగ్‌తో తేమను కాపాడండి",
-      titleHi: "कम नमी — मिट्टी की नमी बचाने पर ध्यान दें",
-      detailEn: `Relative humidity is ${current.humidityPct}% with low rain chances. Light mulching and checking 10–15 cm root-zone moisture help reduce moisture stress.`,
-      detailTe: `గాలిలో తేమ ${current.humidityPct}% గా ఉంది. ఎండు గడ్డి మల్చింగ్ వేయడం ద్వారా నేల తేమ త్వరగా ఆరిపోకుండా చూడవచ్చు.`,
-      detailHi: `नमी ${current.humidityPct}% है और बारिश की संभावना कम है। मल्चिंग और 10–15 सेमी जड़-क्षेत्र नमी की जांच से सिंचाई की बचत होगी।`,
+      titles: {
+        en: "Low humidity — conserve root-zone soil moisture",
+        te: "గాలిలో తేమ తక్కువ — వేర్ల వద్ద మల్చింగ్‌తో తేమను కాపాడండి",
+        hi: "कम नमी — मिट्टी की नमी बचाने पर ध्यान दें",
+        ta: "குறைந்த ஈரப்பதம் — வேர்ப்பகுதி ஈரத்தைக் காக்கவும்",
+        ml: "കുറഞ്ഞ ആർദ്രത — വേരിന് ചുറ്റുമുള്ള ഈർപ്പം സംരക്ഷിക്കുക",
+        kn: "ಕಡಿಮೆ ತೇವಾಂಶ — ಬೇರು ವಲಯದ ಮಣ್ಣಿನ ತೇವ ಉಳಿಸಿ",
+        bn: "কম আর্দ্রতা — শিকড়ের কাছের মাটির রস ধরে রাখুন",
+        mr: "कमी आर्द्रता — मुळांजवळील जमिनीचा ओलावा टिकवा",
+      },
+      details: {
+        en: `Relative humidity is ${hum}% with low rain chances. Light mulching and checking 10–15 cm root-zone moisture help reduce moisture stress.`,
+        te: `గాలిలో తేమ ${hum}% గా ఉంది. ఎండు గడ్డి మల్చింగ్ వేయడం ద్వారా నేల తేమ త్వరగా ఆరిపోకుండా చూడవచ్చు.`,
+        hi: `नमी ${hum}% है और बारिश की संभावना कम है। मल्चिंग और 10–15 सेमी जड़-क्षेत्र नमी की जांच से सिंचाई की बचत होगी।`,
+        ta: `காற்றின் ஈரப்பதம் ${hum}% ஆக உள்ளது. மூடாக்கு அமைப்பதன் மூலம் மண் ஈரப்பதத்தைத் தக்கவைக்கலாம்.`,
+        ml: `അന്തരീക്ഷ ഈർപ്പം ${hum}% ആണ്. പുതയിടുന്നത് മണ്ണിലെ ഈർപ്പം പെട്ടെന്ന് നഷ്ടപ്പെടുന്നത് തടയാൻ സഹായിക്കും.`,
+        kn: `ಗಾಳಿಯಲ್ಲಿ ತೇವಾಂಶ ${hum}% ಇದೆ. ಒಣ ಹುಲ್ಲಿನ ಹೊದಿಕೆ (ಮಲ್ಚಿಂಗ್) ಮಣ್ಣಿನ ತೇವಾಂಶ ಉಳಿಸಲು ಸಹಾಯ ಮಾಡುತ್ತದೆ.`,
+        bn: `বাতাসে আর্দ্রতা ${hum}% এবং বৃষ্টির সম্ভাবনা কম। মালচিং করলে মাটির আর্দ্রতা সহজে নষ্ট হবে না।`,
+        mr: `हवेतील आर्द्रता ${hum}% असून पावसाची शक्यता कमी आहे. आच्छादन केल्यास जमिनीतील ओलावा टिकून राहतो.`,
+      },
     });
   }
 
@@ -621,12 +761,26 @@ function buildAgriculturalInterpretations(params: {
     items.push({
       type: "general",
       severity: "info",
-      titleEn: "Moderate weather for routine field & irrigation work",
-      titleTe: "సాధారణ వ్యవసాయ పనులకు అనుకూల వాతావరణం",
-      titleHi: "नियमित खेती और सिंचाई कार्यों के लिए अनुकूल मौसम",
-      detailEn: `Current temperature is ${current.tempC.toFixed(1)}°C with ${current.humidityPct}% humidity and ${current.windSpeedKmh.toFixed(1)} km/h wind. Inspect topsoil moisture by hand before starting irrigation.`,
-      detailTe: `ప్రస్తుత ఉష్ణోగ్రత ${current.tempC.toFixed(1)}°C, తేమ ${current.humidityPct}%. మోటారు వేసే ముందు చేతితో మట్టి తేమను తనిఖీ చేయండి.`,
-      detailHi: `वर्तमान तापमान ${current.tempC.toFixed(1)}°C और नमी ${current.humidityPct}% है। सिंचाई शुरू करने से पहले हाथ से मिट्टी की नमी जांचें।`,
+      titles: {
+        en: "Moderate weather for routine field & irrigation work",
+        te: "సాధారణ వ్యవసాయ పనులకు అనుకూల వాతావరణం",
+        hi: "नियमित खेती और सिंचाई कार्यों के लिए अनुकूल मौसम",
+        ta: "வழக்கமான விவசாயம் மற்றும் பாசனப் பணிகளுக்கு உகந்த வானிலை",
+        ml: "സാധാരണ കൃഷി, നനയ്ക്കൽ ജോലികൾക്ക് അനുയോജ്യമായ കാലാവസ്ഥ",
+        kn: "ದೈನಂದಿನ ಕೃಷಿ ಮತ್ತು ನೀರಾವರಿ ಕೆಲಸಗಳಿಗೆ ಅನುಕೂಲಕರ ಹವಾಮಾನ",
+        bn: "নিয়মিত চাষ ও সেচের কাজের জন্য অনুকূল আবহাওয়া",
+        mr: "नियमित शेती व सिंचन कामांसाठी अनुकूल हवामान",
+      },
+      details: {
+        en: `Current temperature is ${curT}°C with ${hum}% humidity and ${current.windSpeedKmh.toFixed(1)} km/h wind. Inspect topsoil moisture by hand before starting irrigation.`,
+        te: `ప్రస్తుత ఉష్ణోగ్రత ${curT}°C, తేమ ${hum}%. మోటారు వేసే ముందు చేతితో మట్టి తేమను తనిఖీ చేయండి.`,
+        hi: `वर्तमान तापमान ${curT}°C और नमी ${hum}% है। सिंचाई शुरू करने से पहले हाथ से मिट्टी की नमी जांचें।`,
+        ta: `தற்போதைய வெப்பநிலை ${curT}°C மற்றும் ஈரப்பதம் ${hum}%. பாசனம் தொடங்கும் முன் மண் ஈரப்பதத்தைக் கையால் சோதிக்கவும்.`,
+        ml: `നിലവിലെ താപനില ${curT}°C ഉം ഈർപ്പം ${hum}% ഉം ആണ്. നനയ്ക്കുന്നതിന് മുമ്പ് മണ്ണിലെ ഈർപ്പം കൈകൊണ്ട് പരിശോധിക്കുക.`,
+        kn: `ಪ್ರಸ್ತುತ ತಾಪಮಾನ ${curT}°C ಮತ್ತು ತೇವಾಂಶ ${hum}% ಇದೆ. ನೀರು ಹಾಯಿಸುವ ಮೊದಲು ಕೈಯಿಂದ ಮಣ್ಣಿನ ತೇವಾಂಶ ಪರೀಕ್ಷಿಸಿ.`,
+        bn: `বর্তমান তাপমাত্রা ${curT}°C এবং আর্দ্রতা ${hum}%। সেচ শুরু করার আগে হাত দিয়ে মাটির আর্দ্রতা দেখে নিন।`,
+        mr: `सध्याचे तापमान ${curT}°C आणि आर्द्रता ${hum}% आहे. सिंचन सुरू करण्यापूर्वी हाताने मातीतील ओलावा तपासा.`,
+      },
     });
   }
 
@@ -756,7 +910,6 @@ export async function fetchOpenMeteoWeather(params: {
     let startIdx = hourlyTimes.findIndex((t) => t >= currentTimeStr);
     if (startIdx < 0) startIdx = 0;
 
-    // Next 24h cumulative rain & upcoming 3-hour interval forecast slots (6 slots = next 18 hours)
     let next24hRainMm = 0;
     for (let i = startIdx; i < Math.min(startIdx + 24, hourlyTimes.length); i++) {
       next24hRainMm += data.hourly?.precipitation?.[i] ?? 0;
@@ -775,9 +928,7 @@ export async function fetchOpenMeteoWeather(params: {
         isoTime: iso,
         tempC: Math.round((data.hourly?.temperature_2m?.[i] ?? 0) * 10) / 10,
         conditionKey: wmo.key,
-        conditionEn: wmo.en,
-        conditionTe: wmo.te,
-        conditionHi: wmo.hi,
+        conditionLabels: wmo.labels,
         rainProbabilityPct:
           typeof data.hourly?.precipitation_probability?.[i] === "number"
             ? data.hourly!.precipitation_probability![i]!
@@ -796,9 +947,7 @@ export async function fetchOpenMeteoWeather(params: {
       return {
         date: dateStr,
         conditionKey: wmo.key,
-        conditionEn: wmo.en,
-        conditionTe: wmo.te,
-        conditionHi: wmo.hi,
+        conditionLabels: wmo.labels,
         tempMinC:
           Math.round((data.daily?.temperature_2m_min?.[idx] ?? 0) * 10) / 10,
         tempMaxC:
@@ -834,9 +983,7 @@ export async function fetchOpenMeteoWeather(params: {
       rainMm: Math.round((data.current.rain ?? 0) * 10) / 10,
       weatherCode: data.current.weather_code ?? 0,
       conditionKey: currentWmo.key,
-      conditionEn: currentWmo.en,
-      conditionTe: currentWmo.te,
-      conditionHi: currentWmo.hi,
+      conditionLabels: currentWmo.labels,
       windSpeedKmh: Math.round((data.current.wind_speed_10m ?? 0) * 10) / 10,
       windDirectionDeg: windDirDeg,
       windDirectionCardinal: degreesToCardinal(windDirDeg),
@@ -882,6 +1029,31 @@ export async function fetchOpenMeteoWeather(params: {
           "मौसम के आंकड़े Open-Meteo मॉडल पूर्वानुमान से Asia/Kolkata (IST) समयानुसार लिए गए हैं।",
           "बारिश की संभावना केवल अनुमान को दर्शाती है; खेत पर बारिश की पक्की गारंटी नहीं है।",
           "सिंचाई शुरू करने या रोकने से पहले 10–15 सेमी गहरी मिट्टी की नमी हाथ से जांचें।",
+        ],
+        ta: [
+          "வானிலை தகவல்கள் Open-Meteo கணிப்புகளில் இருந்து Asia/Kolkata (IST) நேரப்படி பெறப்படுகின்றன.",
+          "மழை வாய்ப்பு என்பது கணிப்பு சதவீதம் மட்டுமே; உங்கள் வயலில் நிச்சயமாக மழை பெய்யும் என்பதற்கு உத்தரவாதமல்ல.",
+          "பாசனம் தொடங்குவதற்கு முன் 10–15 செ.மீ ஆழத்தில் மண் ஈரப்பதத்தைக் கையால் சோதிக்கவும்.",
+        ],
+        ml: [
+          "കാലാവസ്ഥാ വിവരങ്ങൾ Open-Meteo മോഡലിൽ നിന്നും Asia/Kolkata (IST) സമയക്രമത്തിൽ ശേഖരിച്ചവയാണ്.",
+          "മഴ സാധ്യത പ്രവചനം മാത്രമാണ്; കൃഷിയിടത്തിൽ മഴ പെയ്യുമെന്ന് ഉറപ്പല്ല.",
+          "നനയ്ക്കൽ തുടങ്ങുന്നതിന് മുമ്പ് 10–15 സെ.മീ ആഴത്തിലുള്ള മണ്ണിലെ ഈർപ്പം കൈകൊണ്ട് പരിശോധിക്കുക.",
+        ],
+        kn: [
+          "ಹವಾಮಾನ ವಿವರಗಳು Open-Meteo ಮಾದರಿ ಮುನ್ಸೂಚನೆಯಿಂದ Asia/Kolkata (IST) ಸಮಯದ ಪ್ರಕಾರ ಬಂದಿವೆ.",
+          "ಮಳೆ ಸಾಧ್ಯತೆ ಕೇವಲ ಮುನ್ಸೂಚನೆಯನ್ನು ತೋರಿಸುತ್ತದೆ; ಹೊಲದಲ್ಲಿ ಖಚಿತ ಮಳೆಯ ಭರವಸೆಯಲ್ಲ.",
+          "ನೀರು ಹಾಯಿಸುವ ಮೊದಲು 10–15 ಸೆಂ.ಮೀ ಆಳದ ಮಣ್ಣಿನ ತೇವಾಂಶವನ್ನು ಕೈಯಿಂದ ಪರೀಕ್ಷಿಸಿ.",
+        ],
+        bn: [
+          "আবহাওয়ার তথ্য Open-Meteo মডেল পূর্বাভাস থেকে Asia/Kolkata (IST) সময় অনুযায়ী নেওয়া হয়েছে।",
+          "বৃষ্টির সম্ভাবনা কেবল পূর্বাভাস নির্দেশ করে; আপনার জমিতে নিশ্চিত বৃষ্টির গ্যারান্টি নয়।",
+          "সেচ শুরু বা বন্ধ করার আগে ১০–১৫ সেমি গভীরে মাটির আর্দ্রতা হাত দিয়ে দেখে নিন।",
+        ],
+        mr: [
+          "हवामान आकडेवारी Open-Meteo मॉडेल अंदाजावरून Asia/Kolkata (IST) वेळेनुसार घेतली आहे.",
+          "पावसाची शक्यता ही केवळ अंदाज दर्शवते; तुमच्या शेतात पावसाची खात्री नाही.",
+          "सिंचन सुरू करण्यापूर्वी किंवा थांबवण्यापूर्वी १०–१५ सेमी खोलीवरील ओलावा हाताने तपासा.",
         ],
       },
     };

@@ -51,9 +51,7 @@ interface WeatherForecastItem {
   isoTime: string;
   tempC: number;
   conditionKey: WeatherConditionKey;
-  conditionEn: string;
-  conditionTe: string;
-  conditionHi: string;
+  conditionLabels: Record<Language, string>;
   rainProbabilityPct: number | null;
   expectedRainfallMm: number;
   windSpeedKmh: number;
@@ -63,9 +61,7 @@ interface WeatherForecastItem {
 interface DailyForecastItem {
   date: string;
   conditionKey: WeatherConditionKey;
-  conditionEn: string;
-  conditionTe: string;
-  conditionHi: string;
+  conditionLabels: Record<Language, string>;
   tempMinC: number;
   tempMaxC: number;
   rainProbabilityMaxPct: number | null;
@@ -76,12 +72,8 @@ interface DailyForecastItem {
 interface WeatherInterpretationItem {
   type: string;
   severity: "info" | "caution" | "warning";
-  titleEn: string;
-  titleTe: string;
-  titleHi: string;
-  detailEn: string;
-  detailTe: string;
-  detailHi: string;
+  titles: Record<Language, string>;
+  details: Record<Language, string>;
 }
 
 interface LiveWeatherData {
@@ -107,9 +99,7 @@ interface LiveWeatherData {
     rainMm: number;
     weatherCode: number;
     conditionKey: WeatherConditionKey;
-    conditionEn: string;
-    conditionTe: string;
-    conditionHi: string;
+    conditionLabels: Record<Language, string>;
     windSpeedKmh: number;
     windDirectionDeg: number;
     windDirectionCardinal: string;
@@ -119,11 +109,7 @@ interface LiveWeatherData {
   forecast: WeatherForecastItem[];
   dailyForecast: DailyForecastItem[];
   interpretations: WeatherInterpretationItem[];
-  assumptions: {
-    en: string[];
-    te: string[];
-    hi: string[];
-  };
+  assumptions: Record<Language, string[]>;
 }
 
 function WeatherConditionIcon({
@@ -155,12 +141,10 @@ function WeatherConditionIcon({
 }
 
 function pickConditionLabel(
-  item: { conditionEn: string; conditionTe: string; conditionHi: string },
+  item: { conditionLabels: Record<Language, string> },
   language: Language
 ): string {
-  if (language === "te") return item.conditionTe;
-  if (language === "hi") return item.conditionHi;
-  return item.conditionEn;
+  return item.conditionLabels?.[language] || item.conditionLabels?.en || "";
 }
 
 interface WeatherPageProps {
@@ -390,18 +374,10 @@ export function WeatherPage({ profile, onBackHome }: WeatherPageProps) {
   };
 
   const pickInterpTitle = (item: WeatherInterpretationItem) =>
-    language === "te"
-      ? item.titleTe
-      : language === "hi"
-        ? item.titleHi
-        : item.titleEn;
+    item.titles?.[language] || item.titles?.en || "";
 
   const pickInterpDetail = (item: WeatherInterpretationItem) =>
-    language === "te"
-      ? item.detailTe
-      : language === "hi"
-        ? item.detailHi
-        : item.detailEn;
+    item.details?.[language] || item.details?.en || "";
 
   const buildReadAloud = (data: LiveWeatherData) => {
     const cond = pickConditionLabel(data.current, language);
@@ -824,7 +800,9 @@ export function WeatherPage({ profile, onBackHome }: WeatherPageProps) {
               <span>{t.weather.assumptionsTitle}</span>
             </div>
             <ul className="list-disc pl-5 text-xs sm:text-sm text-[#71877D] space-y-1">
-              {weatherData.assumptions[language].map((item, idx) => (
+              {(weatherData.assumptions?.[language] ||
+                weatherData.assumptions?.en ||
+                []).map((item, idx) => (
                 <li key={idx}>{item}</li>
               ))}
             </ul>

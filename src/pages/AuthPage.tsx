@@ -15,7 +15,13 @@ import {
 import { LanguageSelector } from "../components/LanguageSelector";
 import { useLanguage } from "../hooks/useLanguage";
 import { getTranslations } from "../i18n/translations";
-import { AuthUser, AuthView, Language } from "../types/app";
+import {
+  AuthUser,
+  AuthView,
+  Language,
+  LANGUAGE_META,
+  SUPPORTED_LANGUAGES,
+} from "../types/app";
 import {
   clearStoredSessionToken,
   safeJsonFetch,
@@ -473,9 +479,17 @@ export function AuthPage({ onAuthSuccess }: AuthPageProps) {
                       }}
                       className="w-full px-3.5 py-3 rounded-xl border border-[#D3E3D8] bg-white text-[#214B3D] text-base min-h-[48px]"
                     >
-                      <option value="te">తెలుగు (Telugu)</option>
-                      <option value="en">English</option>
-                      <option value="hi">हिन्दी (Hindi)</option>
+                      {SUPPORTED_LANGUAGES.map((code) => {
+                        const meta = LANGUAGE_META[code];
+                        return (
+                          <option key={code} value={code}>
+                            {meta.nativeName}
+                            {meta.nativeName !== meta.englishName
+                              ? ` (${meta.englishName})`
+                              : ""}
+                          </option>
+                        );
+                      })}
                     </select>
                   </div>
 

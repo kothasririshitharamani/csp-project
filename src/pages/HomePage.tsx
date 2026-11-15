@@ -1,10 +1,11 @@
-import React, { useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
   AlertCircle,
   ArrowRight,
   Calculator,
   CloudSun,
   Droplets,
+  Eraser,
   HelpCircle,
   History,
   Leaf,
@@ -13,14 +14,23 @@ import {
   Microscope,
   RefreshCw,
   ShieldAlert,
+  SlidersHorizontal,
   Sprout,
   UserCog,
+  Volume2,
 } from "lucide-react";
+import { LanguageSelector } from "../components/LanguageSelector";
 import { ReadAloudButton } from "../components/ReadAloudButton";
-import { VoiceInputControl } from "../components/VoiceInputControl";
+import {
+  VoiceInputControl,
+  VoiceInputControlHandle,
+} from "../components/VoiceInputControl";
+import { VoiceSettingsPanel } from "../components/VoiceSettingsPanel";
 import { useLanguage } from "../hooks/useLanguage";
+import { SpeechState } from "../hooks/useSpeechRecognition";
+import { useTextToSpeech } from "../hooks/useTextToSpeech";
 import { getTranslations } from "../i18n/translations";
-import { AuthUser, PageId, RecentActivityItem } from "../types/app";
+import { AuthUser, Language, PageId, RecentActivityItem } from "../types/app";
 import { safeJsonFetch } from "../utils/apiClient";
 
 interface HomePageProps {
@@ -28,6 +38,7 @@ interface HomePageProps {
   onNavigate: (page: PageId) => void;
   activities: RecentActivityItem[];
   onOpenHistory: () => void;
+  onLanguageChange?: (lang: Language) => void;
 }
 
 export function HomePage({
@@ -35,9 +46,11 @@ export function HomePage({
   onNavigate,
   activities,
   onOpenHistory,
+  onLanguageChange,
 }: HomePageProps) {
   const { language } = useLanguage();
   const t = getTranslations(language);
+  const { isSpeaking, isLoadingAudio, activeId, stop: stopTts } = useTextToSpeech();
 
   const profile = user.profile;
   const farmerName = profile?.farmerName || user.fullName;
@@ -47,10 +60,13 @@ export function HomePage({
       : t.options.crops[profile.crop]
     : "";
 
+  const voiceControlRef = useRef<VoiceInputControlHandle | null>(null);
   const [voiceQuestion, setVoiceQuestion] = useState("");
+  const [speechState, setSpeechState] = useState<SpeechState>("ready");
   const [voiceLoading, setVoiceLoading] = useState(false);
   const [voiceAnswer, setVoiceAnswer] = useState<string | null>(null);
   const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [showVoiceSettings, setShowVoiceSettings] = useState(false);
 
   const featureCards: Array<{
     id: PageId;
@@ -103,9 +119,19 @@ export function HomePage({
     },
   ];
 
+  const handleVoiceTranscript = useCallback((text: string) => {
+    setVoiceQuestion(text);
+    setVoiceError(null);
+  }, []);
+
   const askQuickAi = async (questionText: string) => {
     const trimmed = questionText.trim();
     if (!trimmed || voiceLoading) return;
+
+    if (speechState === "listening") {
+      voiceControlRef.current?.stop();
+    }
+    stopTts();
 
     setVoiceLoading(true);
     setVoiceError(null);
@@ -145,7 +171,6 @@ export function HomePage({
           ? err.message
           : "Unable to get AI response right now. Please retry."
       );
-      setVoiceAnswer(null);
     } finally {
       setVoiceLoading(false);
     }
@@ -156,12 +181,34 @@ export function HomePage({
     askQuickAi(voiceQuestion);
   };
 
+  const handleRemoveText = () => {
+    // Clears spoken/typed question, interim recognition, and errors while preserving previous answer and profile
+    voiceControlRef.current?.reset();
+    setVoiceQuestion("");
+    setVoiceError(null);
+  };
+
+  const hasRemovableContent = Boolean(
+    voiceQuestion.length > 0 ||
+      voiceError ||
+      speechState === "listening" ||
+      speechState === "processing" ||
+      speechState === "recognized" ||
+      speechState === "no_speech" ||
+      speechState === "network_error" ||
+      speechState === "error" ||
+      speechState === "permission_denied"
+  );
+
+  const isReadingHomeAnswer =
+    (isSpeaking || isLoadingAudio) && activeId === "home-voice-answer";
+
   return (
     <div className="space-y-8">
       <section className="bg-white border border-[#D3E3D8] rounded-2xl p-6 sm:p-8 shadow-[0_2px_10px_rgba(33,75,61,0.04)]">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
           {/* Personalized Greeting & Farmer Profile Summary */}
-          <div className="lg:col-span-7 space-y-5">
+          <div className="lg:col-span-6 space-y-5">
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-xs sm:text-sm font-medium text-[#39785C]">
                 <Leaf className="w-4 h-4 shrink-0" />
@@ -248,34 +295,82 @@ export function HomePage({
             )}
           </div>
 
-          {/* Quick-Access AI Voice Assistant Section */}
-          <div className="lg:col-span-5 bg-[#EDF5EF] border border-[#D3E3D8] rounded-2xl p-5 space-y-3.5">
-            <div>
-              <h2 className="text-lg font-bold text-[#214B3D]">
-                {t.home.voiceTitle}
-              </h2>
-              <p className="text-sm text-[#71877D] mt-0.5">
-                {t.home.voiceInstruction}
-              </p>
+          {/* Upgraded Multilingual AI Voice Assistant Section */}
+          <div className="lg:col-span-6 bg-[#EDF5EF] border border-[#D3E3D8] rounded-2xl p-5 space-y-4">
+            <div className="flex flex-wrap items-start justify-between gap-2.5">
+              <div>
+                <h2 className="text-lg font-bold text-[#214B3D]">
+                  {t.home.voiceTitle}
+                </h2>
+                <p className="text-xs sm:text-sm text-[#71877D] mt-0.5">
+                  {t.home.voiceInstruction}
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <LanguageSelector
+                  variant="light"
+                  onLanguageChange={onLanguageChange}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowVoiceSettings((prev) => !prev)}
+                  aria-expanded={showVoiceSettings}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-colors min-h-[38px] ${
+                    showVoiceSettings
+                      ? "bg-[#214B3D] text-white border-[#214B3D]"
+                      : "bg-white text-[#214B3D] border-[#D3E3D8] hover:bg-[#E3F0E8]"
+                  }`}
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5" />
+                  <span>{t.voice.ttsSettingsBtn}</span>
+                </button>
+              </div>
             </div>
 
+            {showVoiceSettings && (
+              <VoiceSettingsPanel onLanguageChange={onLanguageChange} />
+            )}
+
             <VoiceInputControl
-              onTranscriptChange={(text) => setVoiceQuestion(text)}
+              ref={voiceControlRef}
+              onTranscriptChange={handleVoiceTranscript}
+              onStateChange={setSpeechState}
             />
 
             <form onSubmit={handleVoiceSubmit} className="space-y-2.5">
+              <div className="flex items-center justify-between">
+                <label
+                  htmlFor="home-voice-question"
+                  className="text-xs font-bold text-[#214B3D]"
+                >
+                  {t.home.voiceQuestionLabel}
+                </label>
+                {voiceLoading && (
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#39785C]">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>{t.voice.responding}</span>
+                  </span>
+                )}
+              </div>
+
               <textarea
+                id="home-voice-question"
                 rows={2}
                 value={voiceQuestion}
-                onChange={(e) => setVoiceQuestion(e.target.value)}
+                onChange={(e) => {
+                  setVoiceQuestion(e.target.value);
+                  if (voiceError) setVoiceError(null);
+                }}
                 placeholder={t.home.voicePlaceholder}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-[#D3E3D8] bg-white text-[#214B3D] text-sm resize-none"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-[#D3E3D8] bg-white text-[#214B3D] text-sm resize-y min-h-[68px]"
               />
-              <div className="flex items-center gap-2">
+
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="submit"
                   disabled={!voiceQuestion.trim() || voiceLoading}
-                  className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#39785C] text-white text-sm font-semibold hover:bg-[#2f634c] disabled:opacity-50 disabled:cursor-not-allowed transition-colors min-h-[44px]"
+                  className="flex-1 min-w-[160px] inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#39785C] text-white text-sm font-semibold hover:bg-[#2f634c] disabled:opacity-50 disabled:cursor-not-allowed transition-colors min-h-[44px]"
                 >
                   {voiceLoading ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -286,19 +381,16 @@ export function HomePage({
                     {voiceLoading ? t.home.voiceThinking : t.home.voiceSend}
                   </span>
                 </button>
-                {(voiceQuestion || voiceAnswer || voiceError) && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setVoiceQuestion("");
-                      setVoiceAnswer(null);
-                      setVoiceError(null);
-                    }}
-                    className="px-3.5 py-2.5 rounded-xl border border-[#D3E3D8] bg-white text-sm font-medium text-[#71877D] hover:text-[#214B3D] min-h-[44px]"
-                  >
-                    {t.home.voiceClear}
-                  </button>
-                )}
+
+                <button
+                  type="button"
+                  disabled={!hasRemovableContent}
+                  onClick={handleRemoveText}
+                  className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-[#D3E3D8] bg-white text-sm font-semibold text-[#214B3D] hover:bg-[#E3F0E8] disabled:opacity-45 disabled:cursor-not-allowed min-h-[44px]"
+                >
+                  <Eraser className="w-4 h-4 text-[#71877D]" />
+                  <span>{t.home.voiceClear}</span>
+                </button>
               </div>
             </form>
 
@@ -322,9 +414,17 @@ export function HomePage({
             )}
 
             {voiceAnswer && (
-              <div className="rounded-xl bg-white border border-[#D3E3D8] p-4 space-y-2.5">
-                <div className="text-xs font-bold text-[#39785C]">
-                  {t.home.voiceResponseHeading}
+              <div className="rounded-xl bg-white border border-[#D3E3D8] p-4 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-xs font-bold text-[#39785C]">
+                    {t.home.voiceResponseHeading}
+                  </div>
+                  {isReadingHomeAnswer && (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-[#E3F0E8] text-[#214B3D]">
+                      <Volume2 className="w-3 h-3 text-[#39785C]" />
+                      <span>{t.voice.speaking}</span>
+                    </span>
+                  )}
                 </div>
                 <p className="text-sm text-[#214B3D] whitespace-pre-line leading-relaxed">
                   {voiceAnswer}

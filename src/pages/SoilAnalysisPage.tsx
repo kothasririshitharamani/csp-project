@@ -1,7 +1,8 @@
-import React, { useRef, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
+  Eraser,
   ImagePlus,
   Loader2,
   RefreshCw,
@@ -10,8 +11,12 @@ import {
 } from "lucide-react";
 import { BackToHome } from "../components/BackToHome";
 import { ReadAloudButton } from "../components/ReadAloudButton";
-import { VoiceInputControl } from "../components/VoiceInputControl";
+import {
+  VoiceInputControl,
+  VoiceInputControlHandle,
+} from "../components/VoiceInputControl";
 import { useLanguage } from "../hooks/useLanguage";
+import { SpeechState } from "../hooks/useSpeechRecognition";
 import { getTranslations } from "../i18n/translations";
 import { FarmProfile, SoilAnalysisResult } from "../types/app";
 import { safeJsonFetch } from "../utils/apiClient";
@@ -33,18 +38,24 @@ export function SoilAnalysisPage({ profile, onBackHome }: SoilAnalysisPageProps)
   const { language } = useLanguage();
   const t = getTranslations(language);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const voiceRef = useRef<VoiceInputControlHandle | null>(null);
 
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageBase64, setImageBase64] = useState<string | null>(null);
   const [mimeType, setMimeType] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string>("");
   const [description, setDescription] = useState<string>("");
+  const [speechState, setSpeechState] = useState<SpeechState>("ready");
   const [selectedSymptoms, setSelectedSymptoms] = useState<string[]>([]);
   const [isDragging, setIsDragging] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<SoilAnalysisResult | null>(null);
+
+  const handleVoiceTranscript = useCallback((text: string) => {
+    setDescription(text);
+  }, []);
 
   const symptomOptions = [
     { id: "cracking", label: t.soil.symptoms.cracking },
@@ -321,9 +332,32 @@ export function SoilAnalysisPage({ profile, onBackHome }: SoilAnalysisPageProps)
               className="w-full px-3.5 py-2.5 rounded-xl border border-[#D3E3D8] bg-white text-sm text-[#214B3D]"
             />
             <VoiceInputControl
+              ref={voiceRef}
               compact
-              onTranscriptChange={(text) => setDescription(text)}
+              onTranscriptChange={handleVoiceTranscript}
+              onStateChange={setSpeechState}
             />
+            <button
+              type="button"
+              disabled={
+                !description.length &&
+                speechState !== "listening" &&
+                speechState !== "processing" &&
+                speechState !== "recognized" &&
+                speechState !== "no_speech" &&
+                speechState !== "network_error" &&
+                speechState !== "error" &&
+                speechState !== "permission_denied"
+              }
+              onClick={() => {
+                voiceRef.current?.reset();
+                setDescription("");
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#D3E3D8] bg-white text-xs font-semibold text-[#214B3D] hover:bg-[#E3F0E8] disabled:opacity-45 disabled:cursor-not-allowed min-h-[38px]"
+            >
+              <Eraser className="w-3.5 h-3.5 text-[#71877D]" />
+              <span>{t.faq.removeTextBtn}</span>
+            </button>
           </div>
 
           {error && (

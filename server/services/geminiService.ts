@@ -1,6 +1,14 @@
 import { GoogleGenAI, Type, GenerateContentResponse, ThinkingLevel } from "@google/genai";
 
-export type SupportedLanguage = "te" | "en" | "hi";
+export type SupportedLanguage =
+  | "en"
+  | "te"
+  | "ta"
+  | "ml"
+  | "hi"
+  | "kn"
+  | "bn"
+  | "mr";
 
 export interface SoilAnalysisInput {
   imageBase64: string;
@@ -57,10 +65,53 @@ const ALLOWED_IMAGE_MIME_TYPES = new Set([
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const GEMINI_TIMEOUT_MS = 45000;
 
+const LANGUAGE_INFO: Record<
+  SupportedLanguage,
+  { display: string; scriptNote: string }
+> = {
+  en: {
+    display: "English",
+    scriptNote: "simple, warm, everyday Indian English",
+  },
+  te: {
+    display: "Telugu (తెలుగు)",
+    scriptNote:
+      "natural, everyday rural Telugu script (తెలుగు) spoken politely in Andhra Pradesh and Telangana. Use common farmer terms and write out or explain technical terms simply in Telugu script.",
+  },
+  ta: {
+    display: "Tamil (தமிழ்)",
+    scriptNote:
+      "natural, everyday spoken-style Tamil script (தமிழ்) that farmers in Tamil Nadu understand easily.",
+  },
+  ml: {
+    display: "Malayalam (മലയാളം)",
+    scriptNote:
+      "natural, everyday Malayalam script (മലയാളം) clear for farmers in Kerala.",
+  },
+  hi: {
+    display: "Hindi (हिन्दी)",
+    scriptNote:
+      "simple, everyday rural Hindi script (हिन्दी) easy for farmers to hear and read.",
+  },
+  kn: {
+    display: "Kannada (ಕನ್ನಡ)",
+    scriptNote:
+      "natural, everyday Kannada script (ಕನ್ನಡ) clear for farmers in Karnataka.",
+  },
+  bn: {
+    display: "Bengali (বাংলা)",
+    scriptNote:
+      "simple, warm everyday Bengali script (বাংলা) easy for farmers in West Bengal.",
+  },
+  mr: {
+    display: "Marathi (मराठी)",
+    scriptNote:
+      "natural, everyday Marathi script (मराठी) clear for farmers in Maharashtra.",
+  },
+};
+
 function getLanguageDisplay(language: SupportedLanguage): string {
-  if (language === "te") return "Telugu (తెలుగు)";
-  if (language === "hi") return "Hindi (हिन्दी)";
-  return "English";
+  return LANGUAGE_INFO[language]?.display || "English";
 }
 
 function stripMarkdownCodeFences(raw: string): string {
@@ -94,7 +145,7 @@ export function isGeminiConfigured(): boolean {
   return Boolean(key && key !== "MY_GEMINI_API_KEY");
 }
 
-function getGeminiClient(): GoogleGenAI {
+export function getGeminiClient(): GoogleGenAI {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
     const err = new Error("GEMINI_NOT_CONFIGURED");
@@ -157,6 +208,7 @@ export async function analyzeSoilImage(
 
   const ai = getGeminiClient();
   const langLabel = getLanguageDisplay(input.language);
+  const langNote = LANGUAGE_INFO[input.language]?.scriptNote || langLabel;
 
   const symptomsList =
     input.symptoms && input.symptoms.length > 0
@@ -167,7 +219,7 @@ export async function analyzeSoilImage(
   const farmContextStr = formatFarmContext(input.farmContext);
 
   const systemInstruction = `You are a practical, careful agricultural soil and water-management advisor helping smallholder farmers in India.
-Respond strictly in ${langLabel} using simple, clear, everyday words that a first-time smartphone user can understand easily.
+Respond strictly in ${langLabel} using ${langNote} so a first-time smartphone user can understand and listen easily. Avoid unnecessary mixing of other languages.
 IMPORTANT ACCURACY RULES:
 1. Never claim that a photograph can definitively determine soil pH, exact NPK values, micronutrient levels, or exact chemical composition.
 2. Clearly state that visual observations from a photo are preliminary only.
@@ -309,23 +361,22 @@ export async function askFarmerAssistant(
   }
 
   const ai = getGeminiClient();
-  const langLabel = getLanguageDisplay(input.language);
+  const langInfo = LANGUAGE_INFO[input.language] || LANGUAGE_INFO.en;
   const farmContextStr = formatFarmContext(input.farmContext);
 
-  const systemInstruction = `You are a helpful, practical agricultural water-management assistant for farmers, especially in Andhra Pradesh and rural India.
-LANGUAGE RULE: Always reply strictly in ${langLabel}.
-- If Telugu is selected, reply in clear, everyday Telugu script (తెలుగు).
-- If Hindi is selected, reply in clear, everyday Hindi script (हिन्दी).
-- If English is selected, reply in simple, clear English.
-GUIDANCE RULES:
-1. Keep language simple and avoid dense technical jargon. Explain any necessary term simply.
-2. Give practical, step-by-step advice suited for smallholder farmers.
-3. Focus on crop water requirements, irrigation methods, water conservation, soil moisture, weather-based farming decisions, and flood/drought/cyclone preparedness.
-4. Use the farmer's saved profile details naturally when relevant (without inventing extra details).
-5. If important details are missing (such as crop stage, soil type, or local rainfall), ask 1–2 short follow-up questions so you can give more relevant guidance.
-6. Never state uncertain estimates as guaranteed facts. Avoid inventing exact chemical dosages or unverified pesticide prescriptions.
-7. For serious crop diseases, pest outbreaks, or fertilizer dosages, advise consulting the local Agriculture Officer (Mandal Agricultural Officer / RBK / KVK scientist).
-8. Respond in plain readable text (do NOT output raw JSON).
+  const systemInstruction = `You are a respectful, practical agricultural water-management advisor for farmers in rural India.
+STRICT LANGUAGE RULE:
+- Respond ONLY in ${langInfo.display} using ${langInfo.scriptNote}.
+- Do NOT mix English words unless there is no common local agricultural word, and if you must mention a technical concept, explain it in plain everyday words in ${langInfo.display}.
+- Write clean, natural sentences with clear punctuation so your answer also sounds warm and natural when read aloud by text-to-speech.
+- Do NOT use markdown asterisks (**) or hash symbols (#) or raw JSON.
+
+FARMER GUIDANCE RULES:
+1. Keep the explanation concise, practical, and easy to follow step by step (ideal for mobile reading and voice listening).
+2. Focus on crop water needs, soil moisture checks, irrigation scheduling, water conservation, local weather precautions, and cyclone/flood/drought safety.
+3. Use the farmer's saved profile details naturally when helpful, without inventing missing facts.
+4. When key details are missing (such as crop age, soil wetness, or rainfall), ask 1 or 2 short clarifying questions in ${langInfo.display} at the end.
+5. Never invent pesticide doses, fertilizer chemical quantities, or guaranteed yield claims; for crop diseases or exact chemical sprays, advise visiting the local Agriculture Officer / Krishi Vigyan Kendra (KVK).
 ${farmContextStr ? `\nFarmer's saved profile context: ${farmContextStr}` : ""}`;
 
   const recentHistory = (input.history || []).slice(-8);
@@ -336,8 +387,8 @@ ${farmContextStr ? `\nFarmer's saved profile context: ${farmContextStr}` : ""}`;
     .join("\n");
 
   const fullPrompt = formattedHistory
-    ? `Previous conversation:\n${formattedHistory}\n\nFarmer's new question: ${question}`
-    : question;
+    ? `Previous conversation:\n${formattedHistory}\n\nFarmer's new question (reply in ${langInfo.display}): ${question}`
+    : `Farmer's question (reply in ${langInfo.display}): ${question}`;
 
   const response: GenerateContentResponse = await withTimeout(
     ai.models.generateContent({
