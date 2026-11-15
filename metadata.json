@@ -1,6 +1,11 @@
 {
   "name": "AI-Powered Smart Water Management and Farmer Support System",
   "description": "Bilingual Telugu and English smart water management, soil analysis, irrigation planning, weather guidance, disaster preparedness, and AI farmer support system.",
-  "requestFramePermissions": ["microphone", "geolocation"],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "requestFramePermissions": [
+    "microphone",
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }
